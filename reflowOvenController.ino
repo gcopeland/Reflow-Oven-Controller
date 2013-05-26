@@ -69,6 +69,9 @@
 * All we ask is attribution including the supporting libraries used in this 
 * firmware. 
 *
+* // Schematic for thermocouple interface - simple ADC analogRead interface
+* // http://www.simplecircuitdiagram.com/2010/12/27/lm10-thermocouple-current-loop-transmitter/
+*
 * Required Libraries
 * ==================
 * - Arduino PID Library: 
@@ -101,8 +104,10 @@
 #include <LiquidCrystal.h>
 #ifdef	USE_MAX31855
 	#include <MAX31855.h>
-#else
+#ifdef USE_MAX6676
 	#include <max6675.h>
+#else
+// Analog read
 #endif
 #include <PID_v1.h>
 
@@ -115,7 +120,7 @@ typedef enum REFLOW_STATE
   REFLOW_STATE_REFLOW,
   REFLOW_STATE_COOL,
   REFLOW_STATE_COMPLETE,
-	REFLOW_STATE_TOO_HOT,
+  REFLOW_STATE_TOO_HOT,
   REFLOW_STATE_ERROR
 } reflowState_t;
 
@@ -127,10 +132,10 @@ typedef enum REFLOW_STATUS
 
 typedef	enum SWITCH
 {
-	SWITCH_NONE,
-	SWITCH_1,	
-	SWITCH_2
-}	switch_t;
+  SWITCH_NONE,
+  SWITCH_1,	
+  SWITCH_2
+} switch_t;
 
 typedef enum DEBOUNCE_STATE
 {
@@ -173,7 +178,7 @@ const char* lcdMessagesReflowStatus[] = {
   "Reflow",
   "Cool",
   "Complete",
-	"Wait,hot",
+  "Wait,hot",
   "Error"
 };
 
@@ -196,7 +201,7 @@ unsigned char degree[8]  = {
 	int ledRedPin = 4;
 	int buzzerPin = 6;
 	int switchPin = A0;
-#else
+#else USE_MAX31855
 	int ssrPin = 5;
 	int thermocoupleSOPin = A5;
 	int thermocoupleCSPin = A4;
@@ -212,6 +217,31 @@ unsigned char degree[8]  = {
 	int buzzerPin = 6;
 	int switch1Pin = 2;
 	int switch2Pin = 3;
+#else
+// Analog implementation
+// SSRs
+const int ssrPin1 = A0 ;
+const int ssrPin2 = A1 ;
+
+// Analog ADC 
+const int thermocoupleADCPin = A5 ;
+
+const int lcdRsPin = 0 ;
+const int lcdRwPin = 1 ;
+const int lcdEPin = 2 ;
+const int lcdD0Pin = 3 ;
+const int lcdD1Pin = 4 ;
+const int lcdD2Pin = 5 ;
+const int lcdD3Pin = 6 ;
+const int lcdD4Pin = 7 ;
+const int lcdD5Pin = 8 ;
+const int lcdD6Pin = 9 ;
+const int lcdD7Pin = 10 ;
+
+const int buzzerPin = A2 ;
+
+//const int switch1Pin = x ;
+//const int switch2Pin = x ;
 #endif
 
 // ***** PID CONTROL VARIABLES *****
@@ -243,7 +273,12 @@ int timerSeconds;
 // Specify PID control interface
 PID reflowOvenPID(&input, &output, &setpoint, kp, ki, kd, DIRECT);
 // Specify LCD interface
-LiquidCrystal lcd(lcdRsPin, lcdEPin, lcdD4Pin, lcdD5Pin, lcdD6Pin, lcdD7Pin);
+//LiquidCrystal lcd(lcdRsPin, lcdEPin, lcdD4Pin, lcdD5Pin, lcdD6Pin, lcdD7Pin);
+// 8-bit interface
+LiquidCrystal lcd( lcdRsPin, lcdRwPin, lcdEPin,
+		   lcdD0Pin, lcdD1Pin, lcdD2Pin, lcdD3Pin,
+		   lcdD4Pin, lcdD5Pin, lcdD6Pin, lcdD7Pin ) ;
+
 // Specify MAX6675 thermocouple interface
 #ifdef	USE_MAX31855
 	MAX31855 thermocouple(thermocoupleSOPin, thermocoupleCSPin, 
@@ -256,8 +291,11 @@ LiquidCrystal lcd(lcdRsPin, lcdEPin, lcdD4Pin, lcdD5Pin, lcdD6Pin, lcdD7Pin);
 void setup()
 {
   // SSR pin initialization to ensure reflow oven is off
-  digitalWrite(ssrPin, LOW);
-  pinMode(ssrPin, OUTPUT);
+  digitalWrite(ssrPin1, LOW);
+  pinMode(ssrPin1, OUTPUT);
+
+  digitalWrite( ssrPin2, LOW ) ;
+  pinMode( ssrPin2, OUTPUT ) ;
 
   // Buzzer pin initialization to ensure annoying buzzer is off
   digitalWrite(buzzerPin, LOW);
@@ -266,18 +304,20 @@ void setup()
   // LED pins initialization and turn on upon start-up (active low)
   digitalWrite(ledRedPin, LOW);
   pinMode(ledRedPin, OUTPUT);
-	#ifdef USE_MAX6675
-    // LED pins initialization and turn on upon start-up (active low)
-    digitalWrite(ledGreenPin, LOW);	
-		pinMode(ledGreenPin, OUTPUT);
-		// Switch pins initialization
-		pinMode(switch1Pin, INPUT);
-		pinMode(switch2Pin, INPUT);
-	#endif	
+
+#ifdef USE_MAX6675
+  // LED pins initialization and turn on upon start-up (active low)
+  digitalWrite(ledGreenPin, LOW);	
+  pinMode(ledGreenPin, OUTPUT);
+  // Switch pins initialization
+  pinMode(switch1Pin, INPUT);
+  pinMode(switch2Pin, INPUT);
+#endif	
 
   // Start-up splash
   digitalWrite(buzzerPin, HIGH);
-  lcd.begin(8, 2);
+  //  lcd.begin(8, 2);
+  lcd.begin(16, 2);
   lcd.createChar(0, degree);
   lcd.clear();
   lcd.print("Reflow");
@@ -291,6 +331,7 @@ void setup()
   Serial.begin(57600);
 
   // Turn off LED (active low)
+
   digitalWrite(ledRedPin, HIGH);
 	#ifdef  USE_MAX6675
 		digitalWrite(ledGreenPin, HIGH);
@@ -616,12 +657,20 @@ void loop()
       // Time to shift the Relay Window
       windowStartTime += windowSize;
     }
-    if(output > (now - windowStartTime)) digitalWrite(ssrPin, HIGH);
-    else digitalWrite(ssrPin, LOW);   
+    if(output > (now - windowStartTime)) 
+      {
+	digitalWrite(ssrPin1, HIGH);
+	digitalWrite(ssrPin2, HIGH);
+      }
+    else {
+      digitalWrite(ssrPin1, LOW);   
+      digitalWrite(ssrPin2, LOW);   
+    }
   }
   // Reflow oven process is off, ensure oven is off
   else 
   {
-    digitalWrite(ssrPin, LOW);
+    digitalWrite(ssrPin1, LOW);
+    digitalWrite(ssrPin2, LOW);
   }
 }
