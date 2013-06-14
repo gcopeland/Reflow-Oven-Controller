@@ -385,6 +385,8 @@ void setup()
   digitalWrite(buzzerPin, LOW);
   delay(2500);
   lcd.clear();
+  lcd.print("LCDs SUCK!") ;
+  delay(2500);
 
   // Serial communication at 57600 bps
   Serial.begin(57600);
