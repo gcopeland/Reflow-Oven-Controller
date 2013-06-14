@@ -5,6 +5,7 @@
  * Company: Rocket Scream Electronics
  * Author: Lim Phang Moh
  * Website: www.rocketscream.com
+ * Portions: Greg Copeland
  * 
  * Brief
  * =====
@@ -83,6 +84,7 @@
  *
  * Revision  Description
  * ========  ===========
+ * 1.20gc    Addss upport for second relay, second PID, and analog K-type interface. Sanity in formatting.
  * 1.20			Adds supports for v1.60 (and above) of Reflow Oven Controller 
  *           Shield:
  *					  - Uses MAX31855KASA+ chip and pin reassign (allowing A4 & A5 (I2C)
@@ -97,9 +99,12 @@
 // Comment either one the following #define to select your board revision
 // Newer board version starts from v1.60 using MAX31855KASA+ chip 
 //#define  USE_MAX31855
-#define  USE_ANALOG
 // Older board version below version v1.60 using MAX6675ISA+ chip
 //#define USE_MAX6675
+#define USE_ANALOG
+#ifdef USE_ANALOG
+#define TOP_PID
+#endif
 
 // ***** INCLUDES *****
 #include <LiquidCrystal.h>
@@ -107,10 +112,10 @@
 #include <MAX31855.h>
 #ifdef USE_MAX6676
 #include <max6675.h>
-#else
-// Analog read
-#endif
+
 #include <PID_v1.h>
+
+
 
 // ***** TYPE DEFINITIONS *****
 typedef enum REFLOW_STATE
@@ -223,8 +228,10 @@ int switch2Pin = 3;
 #if USE_ANALOG
 // Analog implementation
 // SSRs
-const int ssrPin1 = A0 ;
+const int ssrPin = A0 ;
+#ifdef TOP_PID
 const int ssrPin2 = A1 ;
+#endif
 
 // Analog ADC 
 const int thermocoupleADCPin = A5 ;
@@ -248,6 +255,13 @@ const int buzzerPin = A2 ;
 #endif
 
 // ***** PID CONTROL VARIABLES *****
+#ifdef TOP_PID
+// Special pre-heat control variables
+unsigned long preheatStartTime ;
+const int preheatWindow = 5000 ;
+double i2, o2, s2 ;
+#endif
+
 double setpoint;
 double input;
 double output;
@@ -276,6 +290,10 @@ int timerSeconds;
 // Specify PID control interface
 PID reflowOvenPID(&input, &output, &setpoint, kp, ki, kd, DIRECT);
 
+#ifdef TOP_PID
+PID preheatTopPID( &i2, &o2, &s2, 3, 5, 1, DIRECT ) ;
+#endif
+
 // Specify LCD interface
 // 4-bit interface 
 //LiquidCrystal lcd(lcdRsPin, lcdEPin, lcdD4Pin, lcdD5Pin, lcdD6Pin, lcdD7Pin);
@@ -295,17 +313,32 @@ MAX6675 thermocouple(thermocoupleCLKPin, thermocoupleCSPin,
 		     thermocoupleSOPin);
 #endif
 #ifdef USE_ANALOG
-// ????
+class AnalogThermocouple {
+public:
+  AnalogThermocouple( const int8_t adcPin ):
+    _adcPin( adcPin ) { analogReference( EXTERNAL ) ; } ;
+  // FIXME: Add multiplier to convert analog read value into Celsius
+  double read( void ) 
+  { return reinterpret_cast<double>(analogRead( _adcPin )/1023) } ;
+
+private:
+  uint8_t _adcPin ;
+} ;
+
+
+AnalogThermocouple thermocouple( thermocoupleADCPin ) ;
 #endif
 
 void setup()
 {
   // SSR pin initialization to ensure reflow oven is off
-  digitalWrite(ssrPin1, LOW);
-  pinMode(ssrPin1, OUTPUT);
+  digitalWrite(ssrPin, LOW);
+  pinMode(ssrPin, OUTPUT);
 
+#ifdef TOP_PID
   digitalWrite( ssrPin2, LOW ) ;
   pinMode( ssrPin2, OUTPUT ) ;
+#endif
 
   // Buzzer pin initialization to ensure annoying buzzer is off
   digitalWrite(buzzerPin, LOW);
@@ -367,18 +400,26 @@ void loop()
       // Read thermocouple next sampling period
       nextRead += SENSOR_SAMPLING_TIME;
       // Read current temperature
-#ifdef	USE_MAX31855
+#ifdef USE_MAX31855
       input = thermocouple.readThermocouple(CELSIUS);
-#else
+#endif
+#ifdef USE_MAX6675
       input = thermocouple.readCelsius();
+#endif
+#ifdef USE_ANALOG
+      input = thermocouple.read() ;
 #endif
 		
       // If thermocouple problem detected
-#ifdef	USE_MAX6675
+#ifdef USE_MAX6675
       if (isnan(input))
-#else
-	if((input == FAULT_OPEN) || (input == FAULT_SHORT_GND) || 
-	   (input == FAULT_SHORT_VCC))
+#endif
+#ifdef USE_MAX31855
+      if((input == FAULT_OPEN) || (input == FAULT_SHORT_GND) || 
+	 (input == FAULT_SHORT_VCC))
+#endif
+#ifdef USE_ANALOG
+      if( isnan(intput) )
 #endif
 	  {
 	    // Illegal operation
@@ -489,6 +530,32 @@ void loop()
 	  // Proceed to soaking state
 	  reflowState = REFLOW_STATE_SOAK; 
 	}
+
+#if TOP_PID
+      // Control the TOP heating element to prevent too much
+      // direct heating. This allows the bottom heating element
+      // to primarily pre-heat the oven, thusly reducing direct
+      // heating until the soak period.
+      else {
+	// Temp is less than TEMPERATURE_SOAK_MIN - means we are pre-heating
+	preheatStartTime = millis() ;
+	// FIXME: Verify this
+	s2 = 750 ;
+	// FIXME: This sane?
+	i2 = analogRead( ssrPin ) ;
+
+	unsigned long now = millis() ;
+	if( now - preheatStartTime >= preheatWindow ) {
+	  preheatStartTime += preheatWindow ;
+	}
+
+	if( o2 >= now - preheatStartTime ) {
+	  digitalWrite( ssrPin, HIGH ) ;
+	} else {
+	  digitalWrite( ssrPin, LOW ) ;
+	}
+      }
+#endif
       break;
 
     case REFLOW_STATE_SOAK:     
@@ -566,11 +633,15 @@ void loop()
 		
     case REFLOW_STATE_ERROR:
       // If thermocouple problem is still present
-#ifdef	USE_MAX6675
+#ifdef USE_MAX6675
       if (isnan(input))
-#else
-	if((input == FAULT_OPEN) || (input == FAULT_SHORT_GND) || 
-	   (input == FAULT_SHORT_VCC))
+#endif
+#ifdef USE_MAX31855
+      if((input == FAULT_OPEN) || (input == FAULT_SHORT_GND) || 
+	 (input == FAULT_SHORT_VCC))
+#endif
+#ifdef USE_ANALOG
+      if (isnan(input))
 #endif
 	  {
 	    // Wait until thermocouple wire is connected
@@ -663,6 +734,9 @@ void loop()
       now = millis();
 
       reflowOvenPID.Compute();
+#ifdef TOP_PID
+      preheatTopPID.Compute() ;
+#endif
 
       if((now - windowStartTime) > windowSize)
 	{ 
@@ -671,18 +745,22 @@ void loop()
 	}
       if(output > (now - windowStartTime)) 
 	{
-	  digitalWrite(ssrPin1, HIGH);
+	  digitalWrite(ssrPin, HIGH);
 	  digitalWrite(ssrPin2, HIGH);
 	}
       else {
-	digitalWrite(ssrPin1, LOW);   
+	digitalWrite(ssrPin, LOW);   
+#ifdef TOP_PID
 	digitalWrite(ssrPin2, LOW);   
+#endif
       }
     }
   // Reflow oven process is off, ensure oven is off
   else 
     {
-      digitalWrite(ssrPin1, LOW);
+      digitalWrite(ssrPin, LOW);
+#ifdef TOP_PID
       digitalWrite(ssrPin2, LOW);
+#endif
     }
 }
