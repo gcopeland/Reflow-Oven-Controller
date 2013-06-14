@@ -405,6 +405,10 @@ void setup()
   nextCheck = millis();
   // Initialize thermocouple reading variable
   nextRead = millis();
+
+  while( 1 ) {
+    loop() ;
+  }
 }
 
 void loop()
