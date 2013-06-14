@@ -412,6 +412,7 @@ void loop()
   lcd.print( "Hello World" ) ;
   delay( 1000 ) ;
   digitalWrite( ledRedPin, HIGH ) ;
+  lcd.clear() ;
   delay( 1000 ) ;
 #else
   // Current time
