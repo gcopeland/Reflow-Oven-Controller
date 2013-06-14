@@ -314,6 +314,7 @@ public:
 
     ADCSRA |= _BV( SLEEP_MODE_ADC ) ;
     set_sleep_mode( SLEEP_MODE_ADC ) ;
+    reading = analogRead( _adcPin ) ;
     sleep_enable() ;
 
     do {
