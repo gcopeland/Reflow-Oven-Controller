@@ -107,6 +107,9 @@
 #define USE_8BIT_DISPLAY
 
 // ***** INCLUDES *****
+#include <avr/power.h>
+#include <avr/sleep.h>
+
 #include <LiquidCrystal.h>
 
 #ifdef	USE_MAX31855
@@ -303,14 +306,28 @@ MAX6675 thermocouple(thermocoupleCLKPin, thermocoupleCSPin,
 class AnalogThermocouple {
 public:
   AnalogThermocouple( const int8_t adcPin ):
-    _adcPin( adcPin ) { analogReference( EXTERNAL ) ; } ;
-  // FIXME: Add multiplier to convert analog read value into Celsius
-  double read( void ) 
+    _adcPin( adcPin ) { analogReference( EXTERNAL ) ; analogRead( _adcPin ) ; analogRead( _adcPin ) ; } ;
   //  { return reinterpret_cast<double>(analogRead( _adcPin )/1023) } ;
-  { return (double)(analogRead( _adcPin )/1023) ; } ;
+  double adcRead( void ) 
+  {
+    int reading ;
 
+    ADCSRA |= _BV( SLEEP_MODE_ADC ) ;
+    set_sleep_mode( SLEEP_MODE_ADC ) ;
+    sleep_enable() ;
+
+    do {
+      sei() ;
+      sleep_mode() ;
+      cli() ;
+    } while( ((ADCSRA & (1 << ADSC)) != 0) ) ;
+
+    return( reading ) ;
+  } ;
+
+  // FIXME: Add multiplier to convert analog read value into Celsius
   double readCelsius( void )
-  { return read() ; }
+  { return (double)((double)adcRead())/1024.0 ; }
 
 private:
   uint8_t _adcPin ;
@@ -319,6 +336,8 @@ private:
 
 AnalogThermocouple thermocouple( thermocoupleADCPin ) ;
 #endif
+
+
 
 void setup()
 {
