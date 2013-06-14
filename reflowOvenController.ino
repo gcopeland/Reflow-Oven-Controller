@@ -412,10 +412,11 @@ void loop()
 #if 1
   digitalWrite( ledRedPin, LOW ) ;
   lcd.print( "Hello World" ) ;
-  delay( 1000 ) ;
+  delay( 500 ) ;
   digitalWrite( ledRedPin, HIGH ) ;
   lcd.clear() ;
-  delay( 1000 ) ;
+  lcd.print( "LCDs still SUCK!" ) ;
+  delay( 750 ) ;
 #else
   // Current time
   unsigned long now;
