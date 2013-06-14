@@ -101,20 +101,22 @@
 //#define  USE_MAX31855
 // Older board version below version v1.60 using MAX6675ISA+ chip
 //#define USE_MAX6675
+
+// Analog temp interface w/8-bit LCD display
 #define USE_ANALOG
-#ifdef USE_ANALOG
-#define TOP_PID
-#endif
+#define USE_8BIT_DISPLAY
 
 // ***** INCLUDES *****
 #include <LiquidCrystal.h>
+
 #ifdef	USE_MAX31855
 #include <MAX31855.h>
+#endif
 #ifdef USE_MAX6676
 #include <max6675.h>
+#endif
 
 #include <PID_v1.h>
-
 
 
 // ***** TYPE DEFINITIONS *****
@@ -208,7 +210,7 @@ int ledRedPin = 4;
 int buzzerPin = 6;
 int switchPin = A0;
 #endif
-#if USE_MAX6675
+#ifdef USE_MAX6675
 int ssrPin = 5;
 int thermocoupleSOPin = A5;
 int thermocoupleCSPin = A4;
@@ -225,20 +227,17 @@ int buzzerPin = 6;
 int switch1Pin = 2;
 int switch2Pin = 3;
 #endif
-#if USE_ANALOG
+#ifdef USE_ANALOG
 // Analog implementation
 // SSRs
 const int ssrPin = A0 ;
-#ifdef TOP_PID
-const int ssrPin2 = A1 ;
-#endif
 
 // Analog ADC 
 const int thermocoupleADCPin = A5 ;
 
 const int lcdRsPin = 0 ;
 const int lcdRwPin = 1 ;
-const int lcdEPin = 2 ;
+const int lcdEPin =  2 ;
 const int lcdD0Pin = 3 ;
 const int lcdD1Pin = 4 ;
 const int lcdD2Pin = 5 ;
@@ -247,19 +246,9 @@ const int lcdD4Pin = 7 ;
 const int lcdD5Pin = 8 ;
 const int lcdD6Pin = 9 ;
 const int lcdD7Pin = 10 ;
-
+const int ledRedPin = A1 ;
 const int buzzerPin = A2 ;
-
-//const int switch1Pin = x ;
-//const int switch2Pin = x ;
-#endif
-
-// ***** PID CONTROL VARIABLES *****
-#ifdef TOP_PID
-// Special pre-heat control variables
-unsigned long preheatStartTime ;
-const int preheatWindow = 5000 ;
-double i2, o2, s2 ;
+const int switchPin = A3 ;
 #endif
 
 double setpoint;
@@ -290,18 +279,16 @@ int timerSeconds;
 // Specify PID control interface
 PID reflowOvenPID(&input, &output, &setpoint, kp, ki, kd, DIRECT);
 
-#ifdef TOP_PID
-PID preheatTopPID( &i2, &o2, &s2, 3, 5, 1, DIRECT ) ;
-#endif
-
 // Specify LCD interface
+#ifndef USE_8BIT_DISPLAY
 // 4-bit interface 
-//LiquidCrystal lcd(lcdRsPin, lcdEPin, lcdD4Pin, lcdD5Pin, lcdD6Pin, lcdD7Pin);
-
+LiquidCrystal lcd(lcdRsPin, lcdEPin, lcdD4Pin, lcdD5Pin, lcdD6Pin, lcdD7Pin);
+#else
 // 8-bit interface
 LiquidCrystal lcd( lcdRsPin, lcdRwPin, lcdEPin,
 		   lcdD0Pin, lcdD1Pin, lcdD2Pin, lcdD3Pin,
 		   lcdD4Pin, lcdD5Pin, lcdD6Pin, lcdD7Pin ) ;
+#endif
 
 // Specify MAX6675 thermocouple interface
 #ifdef	USE_MAX31855
@@ -319,7 +306,11 @@ public:
     _adcPin( adcPin ) { analogReference( EXTERNAL ) ; } ;
   // FIXME: Add multiplier to convert analog read value into Celsius
   double read( void ) 
-  { return reinterpret_cast<double>(analogRead( _adcPin )/1023) } ;
+  //  { return reinterpret_cast<double>(analogRead( _adcPin )/1023) } ;
+  { return (double)(analogRead( _adcPin )/1023) ; } ;
+
+  double readCelsius( void )
+  { return read() ; }
 
 private:
   uint8_t _adcPin ;
@@ -334,11 +325,6 @@ void setup()
   // SSR pin initialization to ensure reflow oven is off
   digitalWrite(ssrPin, LOW);
   pinMode(ssrPin, OUTPUT);
-
-#ifdef TOP_PID
-  digitalWrite( ssrPin2, LOW ) ;
-  pinMode( ssrPin2, OUTPUT ) ;
-#endif
 
   // Buzzer pin initialization to ensure annoying buzzer is off
   digitalWrite(buzzerPin, LOW);
@@ -407,7 +393,7 @@ void loop()
       input = thermocouple.readCelsius();
 #endif
 #ifdef USE_ANALOG
-      input = thermocouple.read() ;
+      input = thermocouple.readCelsius() ;
 #endif
 		
       // If thermocouple problem detected
@@ -419,7 +405,7 @@ void loop()
 	 (input == FAULT_SHORT_VCC))
 #endif
 #ifdef USE_ANALOG
-      if( isnan(intput) )
+      if( isnan(input) )
 #endif
 	  {
 	    // Illegal operation
@@ -530,32 +516,6 @@ void loop()
 	  // Proceed to soaking state
 	  reflowState = REFLOW_STATE_SOAK; 
 	}
-
-#if TOP_PID
-      // Control the TOP heating element to prevent too much
-      // direct heating. This allows the bottom heating element
-      // to primarily pre-heat the oven, thusly reducing direct
-      // heating until the soak period.
-      else {
-	// Temp is less than TEMPERATURE_SOAK_MIN - means we are pre-heating
-	preheatStartTime = millis() ;
-	// FIXME: Verify this
-	s2 = 750 ;
-	// FIXME: This sane?
-	i2 = analogRead( ssrPin ) ;
-
-	unsigned long now = millis() ;
-	if( now - preheatStartTime >= preheatWindow ) {
-	  preheatStartTime += preheatWindow ;
-	}
-
-	if( o2 >= now - preheatStartTime ) {
-	  digitalWrite( ssrPin, HIGH ) ;
-	} else {
-	  digitalWrite( ssrPin, LOW ) ;
-	}
-      }
-#endif
       break;
 
     case REFLOW_STATE_SOAK:     
@@ -734,9 +694,6 @@ void loop()
       now = millis();
 
       reflowOvenPID.Compute();
-#ifdef TOP_PID
-      preheatTopPID.Compute() ;
-#endif
 
       if((now - windowStartTime) > windowSize)
 	{ 
@@ -746,21 +703,14 @@ void loop()
       if(output > (now - windowStartTime)) 
 	{
 	  digitalWrite(ssrPin, HIGH);
-	  digitalWrite(ssrPin2, HIGH);
 	}
       else {
 	digitalWrite(ssrPin, LOW);   
-#ifdef TOP_PID
-	digitalWrite(ssrPin2, LOW);   
-#endif
       }
     }
   // Reflow oven process is off, ensure oven is off
   else 
     {
       digitalWrite(ssrPin, LOW);
-#ifdef TOP_PID
-      digitalWrite(ssrPin2, LOW);
-#endif
     }
 }
