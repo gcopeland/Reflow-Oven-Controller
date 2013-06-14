@@ -408,7 +408,7 @@ void setup()
 void loop()
 {
 #if 1
-  digitalWritE( ledRedPin, LOW ) ;
+  digitalWrite( ledRedPin, LOW ) ;
   lcd.print( "Hello World" ) ;
   delay( 1000 )
   digitalWritE( ledRedPin, HIGH ) ;
