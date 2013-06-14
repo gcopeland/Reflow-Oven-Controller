@@ -369,8 +369,11 @@ void setup()
 
   // Start-up splash
   digitalWrite(buzzerPin, HIGH);
-  //  lcd.begin(8, 2);
+#ifndef USE_8BIT_DISPLAY
+  lcd.begin(8, 2);
+#else
   lcd.begin(16, 2);
+#endif
   lcd.createChar(0, degree);
   lcd.clear();
   lcd.print("Reflow");
