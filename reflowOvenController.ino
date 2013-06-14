@@ -410,7 +410,7 @@ void loop()
 #if 1
   digitalWrite( ledRedPin, LOW ) ;
   lcd.print( "Hello World" ) ;
-  delay( 1000 )
+  delay( 1000 ) ;
   digitalWrite( ledRedPin, HIGH ) ;
   delay( 1000 ) ;
 #else
