@@ -323,6 +323,10 @@ public:
       cli() ;
     } while( ((ADCSRA & (1 << ADSC)) != 0) ) ;
 
+    sleep_disable() ;
+    ADCSRA &= ~ _BV( ADIE ) ;
+    sei() ;
+
     return( reading ) ;
   } ;
 
