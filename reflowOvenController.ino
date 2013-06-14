@@ -240,7 +240,7 @@ const int thermocoupleADCPin = A5 ;
 
 const int lcdRsPin = 0 ;
 const int lcdRwPin = 1 ;
-const int lcdEPin =  2 ;
+const int lcdEPin  = 2 ;
 const int lcdD0Pin = 3 ;
 const int lcdD1Pin = 4 ;
 const int lcdD2Pin = 5 ;
@@ -312,6 +312,9 @@ public:
   {
     int reading ;
 
+#if 1
+    reading = 20 ;
+#else
     ADCSRA |= _BV( SLEEP_MODE_ADC ) ;
     set_sleep_mode( SLEEP_MODE_ADC ) ;
     reading = analogRead( _adcPin ) ;
@@ -326,7 +329,7 @@ public:
     sleep_disable() ;
     ADCSRA &= ~ _BV( ADIE ) ;
     sei() ;
-
+#endif
     return( reading ) ;
   } ;
 
@@ -404,6 +407,13 @@ void setup()
 
 void loop()
 {
+#if 1
+  digitalWritE( ledRedPin, LOW ) ;
+  lcd.print( "Hello World" ) ;
+  delay( 1000 )
+  digitalWritE( ledRedPin, HIGH ) ;
+  delay( 1000 ) ;
+#else
   // Current time
   unsigned long now;
 
@@ -420,7 +430,8 @@ void loop()
       input = thermocouple.readCelsius();
 #endif
 #ifdef USE_ANALOG
-      input = thermocouple.readCelsius() ;
+      //      input = thermocouple.readCelsius() ;
+      input = 20 ;
 #endif
 		
       // If thermocouple problem detected
@@ -740,4 +751,5 @@ void loop()
     {
       digitalWrite(ssrPin, LOW);
     }
+#endif
 }
